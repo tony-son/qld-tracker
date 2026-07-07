@@ -137,12 +137,14 @@
     <div class="note" id="c-note"></div>
   </div>
 
-  <h2>VIX with signal zones
+  <h2>QLD price vs VIX
     <span class="range-btns" id="range-btns">
-      <button data-m="6">6M</button><button data-m="12">1Y</button><button data-m="24">2Y</button>
+      <button data-m="6">6M</button><button data-m="12">1Y</button><button data-m="24">2Y</button><button data-m="120">10Y</button>
     </span>
   </h2>
-  <div class="chart-card"><div class="chart-wrap"><canvas id="vixChart"></canvas></div></div>
+  <div class="chart-card"><div class="chart-wrap"><canvas id="vixChart"></canvas></div>
+    <div class="note">Zone shading follows the VIX (right) axis. Note how nearly every QLD cliff lines up with a VIX excursion into the amber/red zones — and how the grinding gains live in the green. 10Y view uses weekly data.</div>
+  </div>
 
   <h2>Regime history <span style="color:var(--muted);font-weight:400;font-size:12px">(10 years, weekly)</span></h2>
   <div class="chart-card">
@@ -442,7 +444,7 @@ const bandPlugin = {
   beforeDraw(chart) {
     const { ctx, chartArea, scales } = chart;
     if (!chartArea) return;
-    const y = scales.y;
+    const y = scales.y1 || scales.y;
     for (const z of ZONES) {
       const hi = Math.min(z.max === Infinity ? y.max : z.max, y.max);
       const lo = Math.max(z.min, y.min);
@@ -456,11 +458,11 @@ const bandPlugin = {
 };
 
 /* ---------- rendering ---------- */
-let vixDaily = null, vixChart = null;
+let priceData = null, vixChart = null;
 let months = 12;
 try { months = +(localStorage.getItem("qldvix-range") || 12); } catch (e) {}
 
-function lastPrice(d) { return d.meta.regularMarketPrice ?? d.closes[d.closes.length - 1]; }
+function lastPrice(d) { return d.price ?? (d.meta && d.meta.regularMarketPrice) ?? d.closes[d.closes.length - 1]; }
 
 function renderQuote(qldD, vixD) {
   const qp = lastPrice(qldD), qPrev = qldD.closes[qldD.closes.length - 2];
@@ -595,46 +597,68 @@ function renderStrip(zoneSeq) {
     `<span><span class="zone-dot" style="background:${z.color}"></span>${z.name}</span>`).join("");
 }
 
-function renderVixChart() {
+function renderPriceChart() {
+  const src = months >= 120 ? priceData.weekly : priceData.daily;
   const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - months);
   const cut = cutoff.toISOString().slice(0, 10);
-  let i0 = vixDaily.dates.findIndex(d => d >= cut);
+  let i0 = src.dates.findIndex(d => d >= cut);
   if (i0 < 0) i0 = 0;
   if (vixChart) vixChart.destroy();
   vixChart = new Chart(document.getElementById("vixChart"), {
     type: "line",
-    data: { labels: vixDaily.dates.slice(i0), datasets: [
-      { label: "VIX", data: vixDaily.closes.slice(i0), borderColor: "#8250df", pointRadius: 0, borderWidth: 2, tension: .2 },
+    data: { labels: src.dates.slice(i0), datasets: [
+      { label: "QLD", data: src.q.slice(i0), borderColor: "#0969da", backgroundColor: "rgba(9,105,218,.07)", fill: true, yAxisID: "y", pointRadius: 0, borderWidth: 2, tension: .2 },
+      { label: "VIX", data: src.v.slice(i0), borderColor: "#8250df", borderDash: [5, 4], yAxisID: "y1", pointRadius: 0, borderWidth: 1.5, tension: .2 },
     ]},
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: "index", intersect: false },
-      plugins: { legend: { display: false } },
+      plugins: { legend: { labels: { color: "#59636e" } } },
       scales: {
         x: { ticks: { color: "#59636e", maxTicksLimit: 8 }, grid: { display: false } },
-        y: { beginAtZero: false, ticks: { color: "#59636e" }, grid: { color: "#eaeef2" } },
+        y: { position: "left", title: { display: true, text: "QLD $", color: "#0969da" }, ticks: { color: "#59636e" }, grid: { color: "#eaeef2" } },
+        y1: { position: "right", title: { display: true, text: "VIX", color: "#8250df" }, beginAtZero: false, ticks: { color: "#59636e" }, grid: { drawOnChartArea: false } },
       },
     },
     plugins: [bandPlugin],
   });
 }
 
+/* ---------- data loading: repo data.json first, live proxies as fallback ---------- */
+async function loadAll(status) {
+  try {
+    status.textContent = "Loading data…";
+    const r = await fetch("data.json?v=" + Date.now(), { cache: "no-store" });
+    if (r.ok) {
+      const j = await r.json();
+      const ageDays = (Date.now() - new Date(j.updated).getTime()) / 864e5;
+      if (j.qldW && j.vixW && j.qldD && j.vixD && ageDays < 5) {
+        return { src: "repo data, updated " + j.updated.slice(0, 10), d: j };
+      }
+      console.warn("data.json stale or incomplete (age " + ageDays.toFixed(1) + "d) — trying live");
+    }
+  } catch (e) { console.warn("data.json unavailable:", e.message || e); }
+  const qldW = parseChart(await fetchJson(yUrl("QLD", "10y", "1wk"), "QLD history", status));
+  const vixW = parseChart(await fetchJson(yUrl("^VIX", "10y", "1wk"), "VIX history", status));
+  const qldD = parseChart(await fetchJson(yUrl("QLD", "2y", "1d"), "QLD daily", status));
+  const vixD = parseChart(await fetchJson(yUrl("^VIX", "2y", "1d"), "VIX daily", status));
+  const opt = async (sym, label) => { try { return parseChart(await fetchJson(yUrl(sym, "5d", "1d"), label, status)); } catch (e) { return null; } };
+  return { src: "live Yahoo data", d: { qldW, vixW, qldD, vixD,
+    vix3m: await opt("^VIX3M", "VIX3M"), vix9d: await opt("^VIX9D", "VIX9D"), irx: await opt("^IRX", "T-bill rate") } };
+}
+
 /* ---------- main ---------- */
 async function main() {
   const status = document.getElementById("status");
   status.className = "loading"; status.style.display = "block";
-  status.textContent = "Loading live data from Yahoo Finance…";
+  status.textContent = "Loading data…";
   try {
-    const qldW = parseChart(await fetchJson(yUrl("QLD", "10y", "1wk"), "QLD history", status));
-    const vixW = parseChart(await fetchJson(yUrl("^VIX", "10y", "1wk"), "VIX history", status));
-    const qldD = parseChart(await fetchJson(yUrl("QLD", "2y", "1d"), "QLD daily", status));
-    const vixD = parseChart(await fetchJson(yUrl("^VIX", "2y", "1d"), "VIX daily", status));
-    const opt = async (sym, label) => { try { return parseChart(await fetchJson(yUrl(sym, "5d", "1d"), label, status)); } catch (e) { return null; } };
-    const vix3mD = await opt("^VIX3M", "VIX3M");
-    const vix9dD = await opt("^VIX9D", "VIX9D");
-    const irxD = await opt("^IRX", "T-bill rate");
+    const { src, d } = await loadAll(status);
+    const { qldW, vixW, qldD, vixD } = d;
+    const vix3mD = d.vix3m, vix9dD = d.vix9d, irxD = d.irx;
 
-    vixDaily = vixD;
+    const dAl = align(qldD, vixD), wAl = align(qldW, vixW);
+    priceData = { daily: { dates: dAl.dates, q: dAl.a, v: dAl.b }, weekly: { dates: wAl.dates, q: wAl.a, v: wAl.b } };
     const { qp, vp, hi52 } = renderQuote(qldD, vixD);
     const bt = backtest(qldW, vixW);
     const rate = irxD ? lastPrice(irxD) / 100 : 0.04;
@@ -652,16 +676,16 @@ async function main() {
     renderFactors(factors);
     renderHorizon(horizonReadout(factors, extras, vp));
     initCalc(extras.rv, rate);
-    renderVixChart();
+    renderPriceChart();
     renderStrip(bt.zoneSeq);
     renderTable(bt.stats, zone);
     document.getElementById("filter-note").innerHTML =
       `"1st / 2nd half" splits the decade to test robustness — a regime effect that only existed in one half is suspect. Simple filter check: holding only when VIX &lt; ${CUT} returned <b>${pct(bt.filter.annS)}</b>/yr vs <b>${pct(bt.filter.annB)}</b>/yr buy &amp; hold (prior week's close as signal, cash at 0%, no taxes/slippage).`;
-    document.getElementById("asof").textContent = "as of " + new Date().toLocaleString();
+    document.getElementById("asof").textContent = "as of " + new Date().toLocaleString() + " · " + src;
     status.style.display = "none";
   } catch (e) {
     status.className = "err";
-    status.innerHTML = `Couldn't load market data — ${String(e.message).replace(/</g, "&lt;")}. Free data proxies may be rate-limited; this usually passes. <button onclick="main()">Retry</button>`;
+    status.innerHTML = `Couldn't load market data — ${String(e.message).replace(/</g, "&lt;")}. If this persists, the daily data workflow may need a manual run (repo → Actions → Update market data → Run workflow). <button onclick="main()">Retry</button>`;
   }
 }
 
@@ -672,7 +696,7 @@ document.getElementById("range-btns").addEventListener("click", e => {
   months = +e.target.dataset.m;
   try { localStorage.setItem("qldvix-range", months); } catch (err) {}
   btns.forEach(b => b.classList.toggle("active", b === e.target));
-  if (vixDaily) renderVixChart();
+  if (priceData) renderPriceChart();
 });
 
 main();
