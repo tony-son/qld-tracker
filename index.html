@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QLD × VIX Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    color-scheme: light;
+    --bg:#ffffff; --card:#f6f8fa; --border:#d0d7de; --text:#1f2328; --muted:#59636e;
+    --green:#1a7f37; --yellow:#9a6700; --red:#cf222e; --blue:#0969da; --purple:#8250df;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:20px;max-width:940px;margin:0 auto}
+  h1{font-size:19px;margin-bottom:3px}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:16px}
+  .hero{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:12px;margin-bottom:12px}
+  @media(max-width:700px){.hero{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+  .big{font-size:26px;font-weight:700}
+  .delta{font-size:13px;margin-top:2px}
+  .small-note{font-size:11.5px;color:var(--muted);margin-top:6px}
+  .up{color:var(--green)} .down{color:var(--red)}
+  .signal-badge{display:inline-block;padding:6px 16px;border-radius:18px;font-weight:700;font-size:17px}
+  .sig-green{background:#dafbe1;color:var(--green);border:1px solid var(--green)}
+  .sig-yellow{background:#fff8c5;color:var(--yellow);border:1px solid var(--yellow)}
+  .sig-red{background:#ffebe9;color:var(--red);border:1px solid var(--red)}
+  .sig-desc{color:var(--muted);font-size:12px;margin-top:9px;line-height:1.5}
+  h2{font-size:14.5px;margin:18px 0 8px}
+  .range-btns{display:inline-flex;gap:6px;margin-left:10px;vertical-align:middle}
+  .range-btns button{background:#fff;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:2px 11px;font-size:12px;cursor:pointer}
+  .range-btns button.active{color:var(--blue);border-color:var(--blue);background:#ddf4ff}
+  .chart-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px}
+  .chart-wrap{position:relative;height:260px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--border)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
+  tr.current td{background:#ddf4ff}
+  tr:last-child td{border-bottom:none}
+  .zone-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px}
+  .note{color:var(--muted);font-size:11.5px;line-height:1.55;margin-top:8px}
+  .factor{display:grid;grid-template-columns:14px 1.15fr auto 1.7fr;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border);font-size:13px}
+  .factor:last-child{border-bottom:none}
+  .f-dot{width:11px;height:11px;border-radius:50%}
+  .f-name{font-weight:600}
+  .f-val{font-variant-numeric:tabular-nums;text-align:right;font-weight:600}
+  .f-why{color:var(--muted);font-size:11.5px;line-height:1.4}
+  .score-bar{display:flex;gap:4px;margin:4px 0 10px}
+  .score-bar span{flex:1;height:7px;border-radius:3px;background:#e6e8eb}
+  .horizon{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+  @media(max-width:700px){.horizon{grid-template-columns:1fr}}
+  .h-stance{display:inline-block;padding:3px 12px;border-radius:12px;font-weight:700;font-size:12.5px;margin-bottom:8px}
+  .h-text{font-size:12.5px;line-height:1.55;color:var(--text)}
+  .calc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:10px}
+  .calc-grid label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px}
+  .calc-grid input[type=range]{width:100%}
+  .calc-grid .cv{font-weight:700;font-size:13px}
+  .calc-out{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;background:#fff;border:1px solid var(--border);border-radius:8px;padding:12px}
+  .calc-out .label{margin-bottom:2px}
+  .calc-out .big{font-size:20px}
+  .strip-wrap{margin-top:4px}
+  #strip{width:100%;height:26px;display:block}
+  .strip-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+  #status{padding:12px 14px;border-radius:10px;margin-bottom:12px;font-size:13px;display:none}
+  #status.err{display:block;background:#ffebe9;border:1px solid var(--red)}
+  #status.loading{display:block;background:#ddf4ff;border:1px solid var(--blue)}
+  #status button{margin-left:10px;background:var(--blue);border:none;color:#fff;padding:4px 12px;border-radius:6px;cursor:pointer}
+  .footer{color:var(--muted);font-size:11px;margin-top:20px;line-height:1.6;border-top:1px solid var(--border);padding-top:10px}
+  .tbl-scroll{overflow-x:auto}
+  @media(max-width:640px){.factor{grid-template-columns:14px 1fr auto}.f-why{grid-column:2/4}}
+</style>
+</head>
+<body>
+  <h1>QLD × VIX Tracker</h1>
+  <div class="sub">2× leveraged QQQ through the volatility lens · data: Yahoo Finance, refreshes on load · <span id="asof"></span></div>
+
+  <div id="status" class="loading">Loading market data…</div>
+
+  <div class="hero">
+    <div class="card">
+      <div class="label">Volatility Signal</div>
+      <div class="signal-badge" id="signal">—</div>
+      <div class="sig-desc" id="signal-desc"></div>
+    </div>
+    <div class="card">
+      <div class="label">QLD</div>
+      <div class="big" id="qld-price">—</div>
+      <div class="delta" id="qld-delta"></div>
+      <div class="small-note" id="qld-high"></div>
+    </div>
+    <div class="card">
+      <div class="label">VIX</div>
+      <div class="big" id="vix-level">—</div>
+      <div class="delta" id="vix-delta"></div>
+      <div class="small-note" id="decay-note"></div>
+    </div>
+  </div>
+
+  <h2>Decision factors <span style="color:var(--muted);font-weight:400;font-size:12px" id="score-label"></span></h2>
+  <div class="chart-card">
+    <div class="score-bar" id="score-bar"></div>
+    <div id="factors"></div>
+    <div class="note">Risk-condition checklist, not a recommendation — position sizing, horizon, taxes, and drawdown tolerance are yours to weigh.</div>
+  </div>
+
+  <h2>Reading it by horizon</h2>
+  <div class="horizon">
+    <div class="card">
+      <div class="label">Trading horizon · weeks–months</div>
+      <div class="h-stance" id="h-short-stance">—</div>
+      <div class="h-text" id="h-short-text"></div>
+    </div>
+    <div class="card">
+      <div class="label">Accumulation horizon · 5+ years</div>
+      <div class="h-stance" id="h-long-stance">—</div>
+      <div class="h-text" id="h-long-text"></div>
+    </div>
+  </div>
+
+  <h2>What-if calculator <span style="color:var(--muted);font-weight:400;font-size:12px">— expected QLD return under your assumptions</span></h2>
+  <div class="chart-card">
+    <div class="calc-grid">
+      <div><label>QQQ return (CAGR): <span class="cv" id="c-ret-v"></span></label><input type="range" id="c-ret" min="-30" max="40" step="1"></div>
+      <div><label>QQQ volatility (annualized): <span class="cv" id="c-vol-v"></span></label><input type="range" id="c-vol" min="10" max="60" step="1"></div>
+      <div><label>Horizon: <span class="cv" id="c-yrs-v"></span></label><input type="range" id="c-yrs" min="1" max="15" step="1"></div>
+      <div><label>Financing rate (3-mo T-bill, live): <span class="cv" id="c-rate-v"></span></label><input type="range" id="c-rate" min="0" max="8" step="0.25"></div>
+    </div>
+    <div class="calc-out">
+      <div><div class="label">QLD expected CAGR</div><div class="big" id="c-qld-cagr">—</div></div>
+      <div><div class="label">$10k in QLD becomes</div><div class="big" id="c-qld-end">—</div></div>
+      <div><div class="label">$10k in QQQ becomes</div><div class="big" id="c-qqq-end">—</div></div>
+      <div><div class="label">Breakeven volatility</div><div class="big" id="c-breakeven">—</div></div>
+    </div>
+    <div class="note" id="c-note"></div>
+  </div>
+
+  <h2>VIX with signal zones
+    <span class="range-btns" id="range-btns">
+      <button data-m="6">6M</button><button data-m="12">1Y</button><button data-m="24">2Y</button>
+    </span>
+  </h2>
+  <div class="chart-card"><div class="chart-wrap"><canvas id="vixChart"></canvas></div></div>
+
+  <h2>Regime history <span style="color:var(--muted);font-weight:400;font-size:12px">(10 years, weekly)</span></h2>
+  <div class="chart-card">
+    <div class="strip-wrap"><canvas id="strip"></canvas></div>
+    <div class="strip-legend" id="strip-legend"></div>
+  </div>
+
+  <h2>How QLD behaves in each VIX regime <span style="color:var(--muted);font-weight:400;font-size:12px">(10-year backtest)</span></h2>
+  <div class="chart-card">
+    <div class="tbl-scroll">
+    <table id="bt-table">
+      <thead><tr><th>Regime</th><th>Time</th><th>Annualized</th><th>Win rate</th><th>Worst week</th><th>Max DD</th><th>1st / 2nd half ann.</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+    <div class="note" id="filter-note"></div>
+  </div>
+
+  <div class="footer">
+    QLD resets 2× leverage daily, so volatility itself erodes returns — drag ≈ σ² per year (quadratic: VIX 15 ≈ 2%/yr, VIX 30 ≈ 9%/yr) — plus financing at roughly the T-bill rate and a 0.95% expense ratio. Low VIX is doubly favorable: calmer index and cheaper compounding. Backtest: each week bucketed by its VIX close, return measured the following week (no look-ahead). Max DD is within each regime's concatenated weeks. Data: Yahoo Finance unofficial API (15-min delayed); if loading fails, retry — a free proxy may be rate-limited. Informational only — not investment advice.
+  </div>
+
+<script>
+"use strict";
+
+const CUT = 25, ER = 0.0095, FIN_SPREAD = 0.004;
+
+const ZONES = [
+  { name: "Very calm",   min: 0,  max: 15,       color: "#1a7f37", band: "rgba(26,127,55,.06)" },
+  { name: "Calm",        min: 15, max: 20,       color: "#4ac26b", band: "rgba(74,194,107,.06)" },
+  { name: "Elevated",    min: 20, max: 30,       color: "#bf8700", band: "rgba(191,135,0,.09)" },
+  { name: "High stress", min: 30, max: Infinity, color: "#cf222e", band: "rgba(207,34,46,.09)" },
+];
+const zoneOf = v => ZONES.find(z => v >= z.min && v < z.max);
+
+window.addEventListener("error", e => {
+  const s = document.getElementById("status");
+  if (s) { s.className = "err"; s.style.display = "block";
+    s.textContent = "Script error: " + (e.message || "unknown") + (window.Chart ? "" : " (Chart.js CDN may be blocked)"); }
+});
+
+/* ---------- fetching with CORS fallbacks ---------- */
+async function fetchJson(url, label, statusEl) {
+  const attempts = [
+    url,
+    "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
+    "https://corsproxy.io/?url=" + encodeURIComponent(url),
+    "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(url),
+  ];
+  let lastErr;
+  for (let i = 0; i < attempts.length; i++) {
+    if (statusEl) statusEl.textContent = `Loading ${label}… (route ${i + 1}/${attempts.length})`;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12000);
+      const r = await fetch(attempts[i], { cache: "no-store", signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json();
+      if (j && j.chart && j.chart.result) return j;
+      throw new Error("unexpected payload");
+    } catch (e) {
+      lastErr = e;
+      console.warn("route failed:", attempts[i].slice(0, 60), e.message || e);
+    }
+  }
+  throw new Error(label + ": " + ((lastErr && lastErr.message) || "all data routes failed"));
+}
+
+const yUrl = (sym, range, interval) =>
+  `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=${range}&interval=${interval}`;
+
+function parseChart(json) {
+  const res = json.chart.result[0];
+  const ts = res.timestamp || [];
+  const cl = res.indicators.quote[0].close || [];
+  const dates = [], closes = [];
+  for (let i = 0; i < ts.length; i++) {
+    if (cl[i] != null && isFinite(cl[i])) {
+      dates.push(new Date(ts[i] * 1000).toISOString().slice(0, 10));
+      closes.push(cl[i]);
+    }
+  }
+  return { dates, closes, meta: res.meta };
+}
+
+function align(a, b) {
+  const bMap = new Map(b.dates.map((d, i) => [d, b.closes[i]]));
+  const dates = [], av = [], bv = [];
+  for (let i = 0; i < a.dates.length; i++) {
+    if (bMap.has(a.dates[i])) { dates.push(a.dates[i]); av.push(a.closes[i]); bv.push(bMap.get(a.dates[i])); }
+  }
+  return { dates, a: av, b: bv };
+}
+
+/* ---------- analytics ---------- */
+function maxDrawdown(rets) {
+  let eq = 1, peak = 1, dd = 0;
+  for (const r of rets) { eq *= 1 + r; peak = Math.max(peak, eq); dd = Math.min(dd, eq / peak - 1); }
+  return dd;
+}
+function geoAnn(rets, periods) {
+  if (!rets.length) return 0;
+  const geo = Math.exp(rets.reduce((s, r) => s + Math.log(1 + r), 0) / rets.length) - 1;
+  return Math.pow(1 + geo, periods) - 1;
+}
+
+function backtest(qld, vix) {
+  const s = align(qld, vix);
+  const half = Math.floor(s.dates.length / 2);
+  const zones = ZONES.map(z => ({ ...z, rets: [], h1: [], h2: [] }));
+  let eqS = 1, eqB = 1;
+  const zoneSeq = [];  // for timeline strip
+  for (let i = 0; i < s.dates.length - 1; i++) {
+    const r = s.a[i + 1] / s.a[i] - 1;
+    const zi = ZONES.indexOf(zoneOf(s.b[i]));
+    zones[zi].rets.push(r);
+    (i < half ? zones[zi].h1 : zones[zi].h2).push(r);
+    zoneSeq.push({ date: s.dates[i], zi });
+    if (s.b[i] < CUT) eqS *= 1 + r;
+    eqB *= 1 + r;
+  }
+  const total = zones.reduce((n, z) => n + z.rets.length, 0);
+  const stats = zones.map(z => ({
+    ...z,
+    n: z.rets.length,
+    share: z.rets.length / total,
+    ann: geoAnn(z.rets, 52),
+    win: z.rets.length ? z.rets.filter(r => r > 0).length / z.rets.length : 0,
+    worst: z.rets.length ? Math.min(...z.rets) : 0,
+    maxDD: maxDrawdown(z.rets),
+    annH1: geoAnn(z.h1, 52),
+    annH2: geoAnn(z.h2, 52),
+  }));
+  const years = total / 52;
+  return { stats, zoneSeq, filter: { annS: Math.pow(eqS, 1 / years) - 1, annB: Math.pow(eqB, 1 / years) - 1 } };
+}
+
+const sma = (arr, n) => arr.slice(-n).reduce((a, b) => a + b, 0) / Math.min(n, arr.length);
+const percentile = (v, arr) => arr.filter(x => x <= v).length / arr.length;
+
+/* 20-day realized vol of QLD daily closes, halved to underlying-index terms, annualized */
+function realizedIndexVol(closes, days = 21) {
+  const tail = closes.slice(-(days + 1));
+  const rets = [];
+  for (let i = 1; i < tail.length; i++) rets.push(Math.log(tail[i] / tail[i - 1]) / 2);
+  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+  const varD = rets.reduce((a, r) => a + (r - mean) ** 2, 0) / (rets.length - 1);
+  return Math.sqrt(varD * 252);
+}
+
+/* expected 2x CAGR given underlying CAGR g, vol sigma, financing rate r (all decimals) */
+function qldCagr(g, sigma, r) { return 2 * g - sigma * sigma - ER - (r + FIN_SPREAD); }
+function breakevenVol(g, r) { const x = g - ER - (r + FIN_SPREAD); return x > 0 ? Math.sqrt(x) : 0; }
+
+/* ---------- formatting ---------- */
+const pct = (x, d = 1) => (x >= 0 ? "+" : "") + (100 * x).toFixed(d) + "%";
+const pctU = (x, d = 1) => (100 * x).toFixed(d) + "%";
+const usd = x => "$" + x.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+const usd2 = x => "$" + x.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const COLORS = { green: "#1a7f37", yellow: "#bf8700", red: "#cf222e" };
+
+/* ---------- decision factors ---------- */
+function computeFactors(d) {
+  // d: {vix, vix3m, vix9d, vixAvg50, vixHist[], qldPrice, qldCloses[], hi52, rate}
+  const f = [];
+  const v = d.vix;
+
+  f.push({
+    name: "VIX level", val: v.toFixed(1),
+    status: v < 20 ? "green" : v < 30 ? "yellow" : "red",
+    why: v < 20 ? "Calm regime — historically QLD's best environment."
+       : v < 30 ? "Elevated vol — decay picks up, returns historically choppy."
+       : "Stress regime — historically negative expectancy for 2× funds.",
+  });
+
+  if (d.vix3m > 0) {
+    const ratio = v / d.vix3m;
+    f.push({
+      name: "Term structure (VIX/3M)", val: ratio.toFixed(2),
+      status: ratio < 0.95 ? "green" : ratio <= 1.0 ? "yellow" : "red",
+      why: ratio < 0.95 ? "Contango — market expects calm to persist."
+         : ratio <= 1.0 ? "Curve flattening — stress building."
+         : "Backwardation — acute stress; historically the worst stretches for leverage.",
+    });
+  }
+
+  if (d.vix9d > 0) {
+    const r9 = d.vix9d / v;
+    f.push({
+      name: "Short-term stress (9D/VIX)", val: r9.toFixed(2),
+      status: r9 < 0.9 ? "green" : r9 <= 1.0 ? "yellow" : "red",
+      why: r9 < 0.9 ? "Next two weeks priced calmer than the month — no imminent event stress."
+         : r9 <= 1.0 ? "Near-term vol converging on the 30-day — something on the calendar."
+         : "9-day above 30-day — market bracing for an immediate event or shock.",
+    });
+  }
+
+  if (d.vixAvg50 > 0) {
+    const mom = v / d.vixAvg50 - 1;
+    f.push({
+      name: "VIX momentum (vs 50d)", val: pct(mom, 0),
+      status: mom <= 0 ? "green" : mom <= 0.20 ? "yellow" : "red",
+      why: mom <= 0 ? "Vol compressing below its own average — regime improving."
+         : mom <= 0.20 ? "Vol running above its average — regime deteriorating at the margin."
+         : "Vol expanding fast — regime shifts usually start exactly like this.",
+    });
+  }
+
+  if (d.vixHist && d.vixHist.length > 100) {
+    const p = percentile(v, d.vixHist);
+    f.push({
+      name: "VIX percentile (10y)", val: pctU(p, 0),
+      status: p < 0.60 ? "green" : p < 0.85 ? "yellow" : "red",
+      why: p < 0.10 ? "Bottom decile — cheap decay, but extreme calm can precede vol spikes (complacency risk)."
+         : p < 0.60 ? "Below its 10-year norm — favorable side of history."
+         : p < 0.85 ? "Above its 10-year norm — costlier regime than usual."
+         : "Top 15% of the decade — historically rare and hostile territory.",
+    });
+  }
+
+  const rv = realizedIndexVol(d.qldCloses);
+  const spread = v - rv * 100;
+  f.push({
+    name: "Implied − realized spread", val: (spread >= 0 ? "+" : "") + spread.toFixed(1) + " pts",
+    status: spread > 2 ? "green" : spread >= -2 ? "yellow" : "red",
+    why: spread > 2 ? "Normal fear premium — options price more vol than is happening; realized is the one that decays you."
+       : spread >= -2 ? "Thin cushion — implied barely above realized; little margin if vol picks up."
+       : "Realized above implied — actual chop exceeds what the market priced. Decay running hotter than VIX suggests.",
+  });
+
+  const a50 = sma(d.qldCloses, 50), a200 = sma(d.qldCloses, 200);
+  const above200 = d.qldPrice > a200, above50 = d.qldPrice > a50;
+  f.push({
+    name: "Trend (200-day)", val: pct(d.qldPrice / a200 - 1, 0) + " vs avg",
+    status: above200 && above50 ? "green" : above200 ? "yellow" : "red",
+    why: above200 && above50 ? "Above 50- and 200-day averages — uptrend intact; the most robust single gate for leverage in the research."
+       : above200 ? "Above 200-day but below 50-day — trend weakening."
+       : "Below 200-day — historically where ~2× the volatility lives and leveraged funds do most damage.",
+  });
+
+  f.push({
+    name: "Realized vol (20d)", val: pctU(rv, 0),
+    status: rv < 0.20 ? "green" : rv < 0.30 ? "yellow" : "red",
+    why: `Actual underlying volatility → decay cost ≈ ${pctU(rv * rv, 1)}/yr right now. Drag is quadratic in vol.`,
+  });
+
+  const carry = rv * rv + ER + (d.rate + FIN_SPREAD);
+  f.push({
+    name: "Financing + total carry", val: pctU(d.rate, 2) + " rate",
+    status: d.rate < 0.02 ? "green" : d.rate < 0.045 ? "yellow" : "red",
+    why: `QLD borrows at ~T-bill to fund the 2nd 100%. All-in cost of carry now ≈ ${pctU(carry, 1)}/yr (decay + financing + 0.95% ER) — QQQ must beat that for 2× to pay.`,
+  });
+
+  const off = 1 - d.qldPrice / d.hi52;
+  f.push({
+    name: "Distance from high", val: "−" + pctU(off, 0),
+    status: off < 0.10 ? "green" : off < 0.25 ? "yellow" : "red",
+    why: off < 0.10 ? "Near 52-week high — momentum intact, but you're paying top prices."
+       : off < 0.25 ? "Moderate drawdown — 2× math needs outsized gains to recover."
+       : "Deep drawdown — slow to recover at 2×, yet historically where the best long-horizon entries appeared. Cuts both ways.",
+  });
+
+  return { factors: f, extras: { rv, carry, off, spread } };
+}
+
+/* ---------- horizon readout ---------- */
+function horizonReadout(factors, extras, vix) {
+  const get = n => factors.find(x => x.name.startsWith(n));
+  const shortKeys = ["VIX level", "Term structure", "Short-term stress", "VIX momentum", "Trend"];
+  const reds = shortKeys.filter(k => get(k) && get(k).status === "red");
+  const yellows = shortKeys.filter(k => get(k) && get(k).status === "yellow");
+
+  let s;
+  if (reds.length >= 1) s = { cls: "sig-red", label: "HOSTILE", text:
+    `Red on: ${reds.join(", ").toLowerCase()}. On a weeks-to-months horizon these conditions historically carried negative expectancy for 2× exposure — the decay is elevated and regime risk is live. If holding, this is where position size matters most.` };
+  else if (yellows.length >= 2) s = { cls: "sig-yellow", label: "MIXED", text:
+    `Caution on: ${yellows.join(", ").toLowerCase()}. Conditions are workable but not clean — historically the choppy middle where whipsaw eats short-term traders. Reduced size or waiting for the yellows to clear are both defensible.` };
+  else s = { cls: "sig-green", label: "SUPPORTIVE", text:
+    `Vol regime and trend both favorable. Historically the strongest stretch for daily-reset leverage: cheap decay, uptrend intact. The standard risk is complacency — calm regimes end without notice, so know your exit before entry.` };
+
+  let l;
+  const cheapCarry = extras.carry < 0.08;
+  if (extras.off >= 0.25) l = { cls: "sig-green", label: "OPPORTUNITY ZONE", text:
+    `Price is ${pctU(extras.off, 0)} off its high — historically where the best 5-year+ QLD entries clustered, even though near-term conditions often looked terrible at the time. Carry is ${cheapCarry ? "manageable" : "expensive"} (≈${pctU(extras.carry, 1)}/yr). Averaging in over months beats calling the bottom.` };
+  else if (extras.off < 0.10) l = { cls: "sig-yellow", label: "FULL PRICE", text:
+    `You'd be buying near the high with all-in carry ≈${pctU(extras.carry, 1)}/yr. Fine in a persistent uptrend — that's most of QLD's historical gains — but there's no margin of safety in the entry. At long horizons, entry price matters more than today's VIX (${vix.toFixed(1)}). Dollar-cost averaging removes the timing bet.` };
+  else l = { cls: "sig-yellow", label: "MIDDLE GROUND", text:
+    `A ${pctU(extras.off, 0)} pullback: neither a bargain entry nor peak prices. For a multi-year hold, today's vol reading matters less than average carry over the whole period (currently ≈${pctU(extras.carry, 1)}/yr) and your tolerance for 60–80% interim drawdowns, which 2× Nasdaq has historically delivered.` };
+
+  return { s, l };
+}
+
+/* ---------- VIX zone background bands ---------- */
+const bandPlugin = {
+  id: "vixBands",
+  beforeDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    if (!chartArea) return;
+    const y = scales.y;
+    for (const z of ZONES) {
+      const hi = Math.min(z.max === Infinity ? y.max : z.max, y.max);
+      const lo = Math.max(z.min, y.min);
+      if (hi <= lo) continue;
+      const top = Math.max(y.getPixelForValue(hi), chartArea.top);
+      const bot = Math.min(y.getPixelForValue(lo), chartArea.bottom);
+      ctx.fillStyle = z.band;
+      ctx.fillRect(chartArea.left, top, chartArea.right - chartArea.left, bot - top);
+    }
+  },
+};
+
+/* ---------- rendering ---------- */
+let vixDaily = null, vixChart = null;
+let months = 12;
+try { months = +(localStorage.getItem("qldvix-range") || 12); } catch (e) {}
+
+function lastPrice(d) { return d.meta.regularMarketPrice ?? d.closes[d.closes.length - 1]; }
+
+function renderQuote(qldD, vixD) {
+  const qp = lastPrice(qldD), qPrev = qldD.closes[qldD.closes.length - 2];
+  const vp = lastPrice(vixD), vPrev = vixD.closes[vixD.closes.length - 2];
+
+  document.getElementById("qld-price").textContent = usd2(qp);
+  const qd = qp / qPrev - 1;
+  const qe = document.getElementById("qld-delta");
+  qe.textContent = pct(qd, 2) + " today"; qe.className = "delta " + (qd >= 0 ? "up" : "down");
+  const hi52 = Math.max(...qldD.closes.slice(-252), qp);
+  document.getElementById("qld-high").textContent = pctU(1 - qp / hi52, 0) + " below 52-week high";
+
+  document.getElementById("vix-level").textContent = vp.toFixed(2);
+  const vd = vp - vPrev;
+  const ve = document.getElementById("vix-delta");
+  ve.textContent = (vd >= 0 ? "+" : "") + vd.toFixed(2) + " today";
+  ve.className = "delta " + (vd <= 0 ? "up" : "down");
+  document.getElementById("decay-note").textContent = "implies ~" + pctU((vp / 100) ** 2, 1) + "/yr decay drag";
+  return { qp, vp, hi52 };
+}
+
+function renderSignal(vix, stats) {
+  const badge = document.getElementById("signal"), desc = document.getElementById("signal-desc");
+  const z = zoneOf(vix);
+  const st = stats.find(s => s.name === z.name);
+  let cls, label;
+  if (vix < 20) { cls = "sig-green"; label = "FAVORABLE"; }
+  else if (vix < 30) { cls = "sig-yellow"; label = "CAUTION"; }
+  else { cls = "sig-red"; label = "HIGH RISK"; }
+  badge.className = "signal-badge " + cls;
+  badge.textContent = label;
+  desc.innerHTML = `VIX ${vix.toFixed(1)} → <b>${z.name}</b> regime, historically <b>${pct(st.ann)}</b>/yr for QLD.`;
+  return z;
+}
+
+function renderFactors(factors) {
+  const el = document.getElementById("factors");
+  el.innerHTML = "";
+  for (const f of factors) {
+    const row = document.createElement("div");
+    row.className = "factor";
+    row.innerHTML = `<div class="f-dot" style="background:${COLORS[f.status]}"></div>
+      <div class="f-name">${f.name}</div><div class="f-val">${f.val}</div>
+      <div class="f-why">${f.why}</div>`;
+    el.appendChild(row);
+  }
+  const greens = factors.filter(f => f.status === "green").length;
+  document.getElementById("score-label").textContent = `— ${greens}/${factors.length} favorable`;
+  const bar = document.getElementById("score-bar");
+  bar.innerHTML = "";
+  for (const f of factors) {
+    const s = document.createElement("span");
+    s.style.background = COLORS[f.status];
+    s.title = f.name;
+    bar.appendChild(s);
+  }
+}
+
+function renderHorizon(h) {
+  const ss = document.getElementById("h-short-stance"), st = document.getElementById("h-short-text");
+  ss.className = "h-stance " + h.s.cls; ss.textContent = h.s.label; st.textContent = h.s.text;
+  const ls = document.getElementById("h-long-stance"), lt = document.getElementById("h-long-text");
+  ls.className = "h-stance " + h.l.cls; ls.textContent = h.l.label; lt.textContent = h.l.text;
+}
+
+/* ---------- calculator ---------- */
+function initCalc(liveVol, liveRate) {
+  const $ = id => document.getElementById(id);
+  $("c-ret").value = 10;
+  $("c-vol").value = Math.round(Math.min(60, Math.max(10, liveVol * 100)));
+  $("c-yrs").value = 5;
+  $("c-rate").value = (Math.round(liveRate * 400) / 4).toFixed(2);
+  const upd = () => {
+    const g = +$("c-ret").value / 100, sg = +$("c-vol").value / 100, yrs = +$("c-yrs").value, r = +$("c-rate").value / 100;
+    $("c-ret-v").textContent = pct(g, 0); $("c-vol-v").textContent = pctU(sg, 0);
+    $("c-yrs-v").textContent = yrs + (yrs > 1 ? " years" : " year"); $("c-rate-v").textContent = pctU(r, 2);
+    const q = qldCagr(g, sg, r);
+    const el = $("c-qld-cagr"); el.textContent = pct(q, 1);
+    el.style.color = q >= g ? "var(--green)" : q >= 0 ? "var(--yellow)" : "var(--red)";
+    $("c-qld-end").textContent = usd(10000 * Math.pow(1 + q, yrs));
+    $("c-qqq-end").textContent = usd(10000 * Math.pow(1 + g, yrs));
+    const be = breakevenVol(g, r);
+    $("c-breakeven").textContent = be > 0 ? pctU(be, 0) : "n/a";
+    $("c-note").innerHTML = be > 0
+      ? `Model: QLD CAGR ≈ 2×QQQ − σ² − 0.95% ER − financing (rate + 0.4%). With these inputs, QLD beats QQQ only if realized volatility stays under <b>${pctU(be, 0)}</b>. Long-run QQQ vol has averaged ~18–22%; crisis years exceed 35%. Simplified — ignores taxes, tracking error, and path dependence beyond the σ² term.`
+      : `At this return/rate combination the leverage costs exceed the extra return at any volatility — QLD would trail QQQ even in a perfectly smooth market. Simplified model; ignores taxes and tracking error.`;
+  };
+  ["c-ret", "c-vol", "c-yrs", "c-rate"].forEach(id => $(id).addEventListener("input", upd));
+  upd();
+}
+
+function renderTable(stats, currentZone) {
+  const tb = document.querySelector("#bt-table tbody");
+  tb.innerHTML = "";
+  for (const s of stats) {
+    const tr = document.createElement("tr");
+    if (s.name === currentZone.name) tr.className = "current";
+    const rangeTxt = s.max === Infinity ? `≥ ${s.min}` : `${s.min}–${s.max}`;
+    tr.innerHTML = `<td><span class="zone-dot" style="background:${s.color}"></span>${s.name} <span style="color:var(--muted)">(${rangeTxt})</span>${s.name === currentZone.name ? ' <b style="color:var(--blue)">←</b>' : ""}</td>
+      <td>${pctU(s.share, 0)}</td>
+      <td style="color:${s.ann >= 0 ? "var(--green)" : "var(--red)"};font-weight:600">${pct(s.ann)}</td>
+      <td>${pctU(s.win, 0)}</td>
+      <td style="color:var(--red)">${pct(s.worst)}</td>
+      <td style="color:var(--red)">${pctU(s.maxDD, 0)}</td>
+      <td style="color:var(--muted)">${pct(s.annH1, 0)} / ${pct(s.annH2, 0)}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+function renderStrip(zoneSeq) {
+  const c = document.getElementById("strip");
+  const W = c.clientWidth || 800, H = 26;
+  c.width = W * (window.devicePixelRatio || 1); c.height = H * (window.devicePixelRatio || 1);
+  c.style.height = H + "px";
+  const ctx = c.getContext("2d");
+  ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+  const w = W / zoneSeq.length;
+  let lastYear = "";
+  ctx.font = "9px sans-serif";
+  for (let i = 0; i < zoneSeq.length; i++) {
+    ctx.fillStyle = ZONES[zoneSeq[i].zi].color;
+    ctx.fillRect(i * w, 0, Math.ceil(w), 18);
+    const yr = zoneSeq[i].date.slice(0, 4);
+    if (yr !== lastYear) {
+      lastYear = yr;
+      ctx.fillStyle = "#59636e";
+      ctx.fillText(yr, i * w + 1, 25);
+    }
+  }
+  const leg = document.getElementById("strip-legend");
+  leg.innerHTML = ZONES.map(z =>
+    `<span><span class="zone-dot" style="background:${z.color}"></span>${z.name}</span>`).join("");
+}
+
+function renderVixChart() {
+  const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - months);
+  const cut = cutoff.toISOString().slice(0, 10);
+  let i0 = vixDaily.dates.findIndex(d => d >= cut);
+  if (i0 < 0) i0 = 0;
+  if (vixChart) vixChart.destroy();
+  vixChart = new Chart(document.getElementById("vixChart"), {
+    type: "line",
+    data: { labels: vixDaily.dates.slice(i0), datasets: [
+      { label: "VIX", data: vixDaily.closes.slice(i0), borderColor: "#8250df", pointRadius: 0, borderWidth: 2, tension: .2 },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#59636e", maxTicksLimit: 8 }, grid: { display: false } },
+        y: { beginAtZero: false, ticks: { color: "#59636e" }, grid: { color: "#eaeef2" } },
+      },
+    },
+    plugins: [bandPlugin],
+  });
+}
+
+/* ---------- main ---------- */
+async function main() {
+  const status = document.getElementById("status");
+  status.className = "loading"; status.style.display = "block";
+  status.textContent = "Loading live data from Yahoo Finance…";
+  try {
+    const qldW = parseChart(await fetchJson(yUrl("QLD", "10y", "1wk"), "QLD history", status));
+    const vixW = parseChart(await fetchJson(yUrl("^VIX", "10y", "1wk"), "VIX history", status));
+    const qldD = parseChart(await fetchJson(yUrl("QLD", "2y", "1d"), "QLD daily", status));
+    const vixD = parseChart(await fetchJson(yUrl("^VIX", "2y", "1d"), "VIX daily", status));
+    const opt = async (sym, label) => { try { return parseChart(await fetchJson(yUrl(sym, "5d", "1d"), label, status)); } catch (e) { return null; } };
+    const vix3mD = await opt("^VIX3M", "VIX3M");
+    const vix9dD = await opt("^VIX9D", "VIX9D");
+    const irxD = await opt("^IRX", "T-bill rate");
+
+    vixDaily = vixD;
+    const { qp, vp, hi52 } = renderQuote(qldD, vixD);
+    const bt = backtest(qldW, vixW);
+    const rate = irxD ? lastPrice(irxD) / 100 : 0.04;
+
+    const { factors, extras } = computeFactors({
+      vix: vp,
+      vix3m: vix3mD ? lastPrice(vix3mD) : 0,
+      vix9d: vix9dD ? lastPrice(vix9dD) : 0,
+      vixAvg50: sma(vixD.closes, 50),
+      vixHist: vixW.closes,
+      qldPrice: qp, qldCloses: qldD.closes, hi52, rate,
+    });
+
+    const zone = renderSignal(vp, bt.stats);
+    renderFactors(factors);
+    renderHorizon(horizonReadout(factors, extras, vp));
+    initCalc(extras.rv, rate);
+    renderVixChart();
+    renderStrip(bt.zoneSeq);
+    renderTable(bt.stats, zone);
+    document.getElementById("filter-note").innerHTML =
+      `"1st / 2nd half" splits the decade to test robustness — a regime effect that only existed in one half is suspect. Simple filter check: holding only when VIX &lt; ${CUT} returned <b>${pct(bt.filter.annS)}</b>/yr vs <b>${pct(bt.filter.annB)}</b>/yr buy &amp; hold (prior week's close as signal, cash at 0%, no taxes/slippage).`;
+    document.getElementById("asof").textContent = "as of " + new Date().toLocaleString();
+    status.style.display = "none";
+  } catch (e) {
+    status.className = "err";
+    status.innerHTML = `Couldn't load market data — ${String(e.message).replace(/</g, "&lt;")}. Free data proxies may be rate-limited; this usually passes. <button onclick="main()">Retry</button>`;
+  }
+}
+
+const btns = document.querySelectorAll("#range-btns button");
+btns.forEach(b => b.classList.toggle("active", +b.dataset.m === months));
+document.getElementById("range-btns").addEventListener("click", e => {
+  if (e.target.tagName !== "BUTTON") return;
+  months = +e.target.dataset.m;
+  try { localStorage.setItem("qldvix-range", months); } catch (err) {}
+  btns.forEach(b => b.classList.toggle("active", b === e.target));
+  if (vixDaily) renderVixChart();
+});
+
+main();
+</script>
+</body>
+</html>
